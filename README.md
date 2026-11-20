@@ -4,6 +4,8 @@
 
 **Claude through your own server only. If the tunnel drops, traffic stops — it does not leak.**
 
+*RU: Claude только через свой сервер. Оборвался канал — оборвался трафик, а не утёк напрямую.*
+
 ![macOS](https://img.shields.io/badge/macOS-11%2B-000?logo=apple&logoColor=white)
 ![sing-box](https://img.shields.io/badge/sing-box-1.14-4B8BBE)
 ![3x-ui](https://img.shields.io/badge/3x--ui-panel-1E88E5)
@@ -134,6 +136,10 @@ claude-net start
 - [docs/en/TROUBLESHOOTING.md](docs/en/TROUBLESHOOTING.md) — when it does not work
 - [SECURITY.md](SECURITY.md) — secrets, panel hardening, limits
 - Русская версия: [docs/](docs/)
+
+---
+
+<sub>**Keywords / Ключевые слова:** Claude не работает в России · обход блокировки Claude · Claude без VPN · VPN для Claude · Claude Desktop через прокси · Claude Code песочница · kill switch · утечка IP · маршрутизация по домену · обход DPI · VLESS REALITY · sing-box · 3x-ui · Shadowsocks · split tunneling · macOS</sub>
 
 ## License
 
