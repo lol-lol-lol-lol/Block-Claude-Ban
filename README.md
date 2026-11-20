@@ -2,72 +2,76 @@
 
 # Block Claude Ban
 
-**Claude только через свой сервер. Оборвался канал — оборвался трафик, а не утёк напрямую.**
+**Claude through your own server only. If the tunnel drops, traffic stops — it does not leak.**
 
 ![macOS](https://img.shields.io/badge/macOS-11%2B-000?logo=apple&logoColor=white)
 ![sing-box](https://img.shields.io/badge/sing-box-1.14-4B8BBE)
 ![3x-ui](https://img.shields.io/badge/3x--ui-panel-1E88E5)
 ![license](https://img.shields.io/badge/license-MIT-2ea44f)
 
+[English](README.md) · [Русский](README.ru.md)
+
 </div>
 
 ---
 
-## Зачем это
+## Why
 
-Claude не работает из ряда стран, и обычно советуют «включи VPN». Проблема в том, что
-VPN рвётся: после сна, при смене Wi-Fi, на переподключении. В эту секунду Claude уже
-отправляет запрос с вашего настоящего адреса — и аккаунт видит смену страны.
+Claude is unavailable in some countries, and the usual advice is "turn on a VPN". The
+problem is that VPNs drop: after sleep, on Wi-Fi change, on reconnect. In that second
+Claude is already sending a request from your real address — and the account sees a
+country change.
 
-Этот репозиторий собирает схему, в которой такой утечки нет **по устройству**, а не по
-надежде на дисциплину:
+This repository builds a setup where such a leak is impossible **by design**, not by
+discipline:
 
-- домены Claude идут **только** через ваш сервер в нужной стране;
-- запасного маршрута «напрямую» у них нет;
-- если канал упал — соединение обрывается или замирает, но не уходит в обход;
-- остальной интернет работает как обычно, через ваш прежний VPN.
+- Claude domains go **only** through your own server in the required country;
+- there is no fallback "direct" route for them;
+- if the tunnel dies, the connection fails or freezes, it never goes around;
+- the rest of the internet keeps working as before, through your existing VPN.
 
-## Как устроено
+## How it works
 
 ```mermaid
 flowchart LR
-    A[Claude.app<br/>Chrome<br/>Claude Code] -->|127.0.0.1:2080| B[sing-box<br/>шлюз]
-    B -->|домены Claude +<br/>160.79.104.0/21| C[Ваш сервер<br/>Сингапур]
-    B -->|всё остальное| D[Обычный VPN<br/>или напрямую]
+    A[Claude.app<br/>Chrome<br/>Claude Code] -->|127.0.0.1:2080| B[sing-box<br/>gateway]
+    B -->|Claude domains +<br/>160.79.104.0/21| C[Your server<br/>Singapore]
+    B -->|everything else| D[Regular VPN<br/>or direct]
     C --> E[Anthropic]
-    F[Little Snitch] -.->|запрет прямых<br/>соединений| E
+    F[Little Snitch] -.->|deny direct<br/>connections| E
 ```
 
-Шлюз — единственная точка, которая знает, куда идти. Прямой доступ к Anthropic закрыт
-фаерволом, поэтому даже приложение, игнорирующее прокси, не сможет уйти в обход.
+The gateway is the only component that decides where traffic goes. Direct access to
+Anthropic is blocked by the firewall, so even an app that ignores the proxy cannot
+bypass it.
 
-## Что внутри
+## What is inside
 
-| Компонент | Роль |
+| Component | Role |
 |---|---|
-| `bin/claude-net` | управление шлюзом: start/stop/status/check/trace/use |
-| `bin/claude-desktop` | запуск Claude Desktop через прокси, с ожиданием шлюза |
-| `bin/claude-safe` | Claude Code: проверка выходного IP + песочница macOS |
-| `bin/chrome-claude` | Chrome с отдельным профилем, часовым поясом и языком страны |
-| `bin/comet-claude` | то же для Comet |
-| `bin/claude-app-guard.sh` | сторож: не даёт Claude работать мимо шлюза |
-| `server/install-sg-server.sh` | установка узла VLESS+REALITY на VPS |
-| `sandbox/` | профиль песочницы и страница проверки часового пояса |
-| `docs/` | архитектура, сервер, разбор проблем |
+| `bin/claude-net` | gateway control: start/stop/status/check/trace/use |
+| `bin/claude-desktop` | launches Claude Desktop through the proxy, waits for the gateway |
+| `bin/claude-safe` | Claude Code: exit-IP preflight + macOS sandbox |
+| `bin/chrome-claude` | Chrome with a dedicated profile, timezone and language |
+| `bin/comet-claude` | the same for Comet |
+| `bin/claude-app-guard.sh` | watchdog: keeps Claude from running outside the gateway |
+| `server/install-sg-server.sh` | VLESS+REALITY node installer for a VPS |
+| `sandbox/` | sandbox profile and a timezone/fingerprint check page |
+| `docs/` | architecture, server, troubleshooting |
 
-## Быстрый старт
+## Quick start
 
-### 1. Сервер
+### 1. Server
 
 ```bash
 scp server/install-sg-server.sh root@YOUR_SERVER_IP:/root/
 ssh root@YOUR_SERVER_IP 'bash /root/install-sg-server.sh'
 ```
 
-Скрипт поднимает sing-box, генерирует REALITY-ключи и печатает готовый блок `outbound`.
-Подробнее — [docs/SERVER.md](docs/SERVER.md).
+The script installs sing-box, generates REALITY keys and prints a ready `outbound`
+block. Details: [docs/en/SERVER.md](docs/en/SERVER.md).
 
-### 2. Клиент
+### 2. Client
 
 ```bash
 git clone https://github.com/lol-lol-lol-lol/Block-Claude-Ban.git
@@ -75,65 +79,69 @@ cd Block-Claude-Ban
 ./install.sh
 ```
 
-Установщик скачает sing-box, разложит скрипты, поставит автозапуск и ярлык «Claude SG».
+It downloads sing-box, installs the scripts, sets up autostart and the "Claude SG"
+shortcut.
 
-### 3. Конфиг
+### 3. Configuration
 
 ```bash
 cp config.example.json ~/vpn/claude-net/config.json
-$EDITOR ~/vpn/claude-net/config.json    # YOUR_SERVER_IP, YOUR_SS_PASSWORD, резерв
+$EDITOR ~/vpn/claude-net/config.json    # YOUR_SERVER_IP, YOUR_SS_PASSWORD, backup
 ```
 
-### 4. Проверка
+### 4. Verify
 
 ```bash
-claude-net check     # шлюз жив, цепочка работает
-claude-net trace     # что видит Anthropic
+claude-net check     # gateway is up, chain works
+claude-net trace     # what Anthropic actually sees
 ```
 
-## Команды
+## Commands
 
 ```bash
 claude-net start | stop | restart | status
-claude-net check              # прямой выход, выход цепочки, claude.ai, api
-claude-net trace              # Cloudflare trace через цепочку и напрямую
-claude-net use sg-vps         # основной выход
-claude-net use backup         # резерв, вручную
-claude-net web                # страница проверки в браузере
+claude-net check              # direct exit, chain exit, claude.ai, api
+claude-net trace              # Cloudflare trace via chain and directly
+claude-net use sg-vps         # primary outbound
+claude-net use backup         # backup, manual only
+claude-net web                # open the check page in the browser
 ```
 
-## Три слоя защиты
+## Three layers of protection
 
-| Слой | Что закрывает | Что не закрывает |
+| Layer | Covers | Does not cover |
 |---|---|---|
-| **Шлюз** | маршрут: домены Claude только через сервер, без запасного «напрямую» | приложение, которое вообще не слушает прокси |
-| **Little Snitch** | прямые соединения любого процесса к Anthropic | соединения через локальный прокси (localhost не фильтруется) |
-| **Песочница** | Claude Code ходит только на localhost | остальные приложения |
-| **Сторож** | Claude Desktop не живёт без прокси | окно ~10 с при неправильном старте |
+| **Gateway** | routing: Claude domains via the server only, no direct fallback | an app that ignores the proxy entirely |
+| **Little Snitch** | direct connections to Anthropic from any process | connections inside a local proxy (localhost is not filtered) |
+| **Sandbox** | Claude Code can only reach localhost | other applications |
+| **Watchdog** | Claude Desktop cannot live without the proxy | a ~10 s window on a wrong launch |
 
-Проверка «обрыв не течёт»:
+Leak test:
 
 ```bash
 claude-net stop
-curl https://api.anthropic.com/v1/models   # должно быть ошибкой соединения
+curl https://api.anthropic.com/v1/models   # must fail to connect
 claude-net start
 ```
 
-## Честно о границах
+## Honest limits
 
-- **Один сервер.** Упал — Claude встал. Резерв переключается вручную, чтобы страна
-  не менялась посреди сессии.
-- **Приватность не абсолютна.** Схема меняет адрес, но не отменяет правила сервиса.
-- **Часовой пояс, язык и WebRTC** — отдельные сигналы. В репозитории есть страница
-  `sandbox/tz-check.html`, которая показывает, что видит сайт.
-- **Не для обхода закона.** Ответственность за использование — на вас.
+- **Single server.** If it dies, Claude stops. The backup is switched manually so the
+  country never changes mid-session.
+- **Not absolute privacy.** This changes your address, it does not change the service's
+  rules.
+- **Timezone, language and WebRTC** are separate signals. `sandbox/tz-check.html` shows
+  what a website can read.
+- **Not a tool for breaking the law.** You are responsible for how you use it.
 
-## Документация
+## Documentation
 
-- [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) — как всё устроено и почему
-- [docs/SERVER.md](docs/SERVER.md) — сервер: порты, панель, подписки
-- [docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md) — что делать, когда не работает
+- [docs/en/ARCHITECTURE.md](docs/en/ARCHITECTURE.md) — how and why
+- [docs/en/SERVER.md](docs/en/SERVER.md) — server: ports, panel, subscriptions
+- [docs/en/TROUBLESHOOTING.md](docs/en/TROUBLESHOOTING.md) — when it does not work
+- [SECURITY.md](SECURITY.md) — secrets, panel hardening, limits
+- Русская версия: [docs/](docs/)
 
-## Лицензия
+## License
 
 [MIT](LICENSE) © 2026 lol-lol-lol-lol

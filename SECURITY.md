@@ -1,52 +1,51 @@
-# Безопасность
+# Security
 
-## В репозитории нет секретов
+## No secrets in this repository
 
-Всё, что содержит ключи, живёт только у вас:
+Everything that contains keys stays on your machine:
 
-- `config.json` — пароли Shadowsocks, ключи REALITY, данные прокси;
+- `config.json` — Shadowsocks passwords, REALITY keys, proxy credentials;
 - `.env`, `*.log`, `*.pid`;
-- сертификаты и приватные ключи.
+- certificates and private keys.
 
-Они перечислены в `.gitignore`. `config.example.json` содержит только заглушки
-`YOUR_*`.
+They are listed in `.gitignore`. `config.example.json` contains only `YOUR_*`
+placeholders.
 
-## Что считается секретом
+## What counts as a secret
 
-| Файл | Что внутри |
+| File | Contents |
 |---|---|
-| `config.json` | UUID, пароль SS, публичный ключ REALITY, резервные прокси |
-| `/etc/x-ui/install-result.env` (сервер) | логин, пароль и API-токен панели |
-| `/root/reality.txt` (сервер) | приватный ключ REALITY |
-| ссылка-подписка | доступ к серверу для клиента |
+| `config.json` | UUID, SS password, REALITY public key, backup proxies |
+| `/etc/x-ui/install-result.env` (server) | panel login, password and API token |
+| `/root/reality.txt` (server) | REALITY private key |
+| subscription link | access to the server for a client |
 
-Если что-то из этого попало в git — не «удаляйте файл», а **перевыпускайте**: считайте
-ключ скомпрометированным, потому что история коммитов сохраняется.
+If any of this reaches git, do not "delete the file" — **rotate the key**. History keeps
+commits, so treat it as compromised.
 
-## Панель на публичном IP
+## Panel on a public IP
 
-Панель 3x-ui — это веб-приложение с авторизацией. Практика:
+The 3x-ui panel is a web application with authentication. Practical rules:
 
-1. нестандартный порт;
-2. TLS с валидным сертификатом;
-3. fail2ban (в 3x-ui есть);
-4. по возможности — только через SSH-туннель:
+1. non-standard port;
+2. TLS with a valid certificate;
+3. fail2ban (included in 3x-ui);
+4. ideally SSH tunnel only:
 
 ```bash
 ssh -L 1001:127.0.0.1:1001 root@SERVER_IP
-# затем http://127.0.0.1:1001
+# then open http://127.0.0.1:1001
 ```
 
-## Границы схемы
+## Boundaries of this scheme
 
-- Она меняет адрес, с которого вы ходите в сервис. Она **не делает вас невидимым**:
-  часовой пояс, язык, отпечаток браузера и история платежей остаются отдельными
-  сигналами.
-- Если сервис требует верификацию личности, схема её не пройдёт за вас.
-- Локальный обход возможен, если процесс запущен с правами администратора или
-  игнорирует прокси — поэтому и нужен фаервол, а не только настройка прокси.
+- It changes the address you connect from. It does **not** make you invisible:
+  timezone, language, browser fingerprint and payment history remain separate signals.
+- If a service demands identity verification, this scheme will not pass it for you.
+- A local bypass is possible if a process runs as administrator or ignores the proxy —
+  that is why a firewall is needed, not just proxy settings.
 
-## Сообщить о проблеме
+## Reporting a problem
 
-Откройте issue без логов, содержащих IP, UUID, ключи и домены. Если нужно показать
-конфиг — замените значения на `REDACTED`.
+Open an issue without logs that contain IPs, UUIDs, keys or domains. If you must show a
+config, replace values with `REDACTED`.
