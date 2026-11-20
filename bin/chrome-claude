@@ -1,0 +1,75 @@
+#!/bin/bash
+# Открывает URL (или страницу проверки) в браузере с настройками Сингапура.
+#
+#   chrome-claude            → claude.ai
+#   chrome-claude --check    → страница проверки
+#   chrome-claude <url>      → любой адрес
+#   chrome-claude --fresh    → пустой отдельный профиль вместо основного
+#
+# По умолчанию используется ВАШ основной профиль: все вкладки, закладки, история.
+set -uo pipefail
+
+# путь к набору, с разворотом симлинков
+src="${BASH_SOURCE[0]}"
+while [ -L "$src" ]; do
+  d="$(cd -P "$(dirname "$src")" && pwd)"
+  src="$(readlink "$src")"
+  case "$src" in /*) ;; *) src="$d/$src" ;; esac
+done
+DIR="$(cd -P "$(dirname "$src")/.." && pwd)"
+
+APP="${BROWSER_APP:-/Applications/Google Chrome.app}"
+NAME="${BROWSER_NAME:-Google Chrome}"
+BIN="${BROWSER_BIN:-$APP/Contents/MacOS/Google Chrome}"
+MAIN_PROFILE="${MAIN_PROFILE:-$HOME/Library/Application Support/Google/Chrome}"
+FRESH_PROFILE="${FRESH_PROFILE:-$HOME/Library/Application Support/chrome-claude}"
+TZ_SG="${TZ_SG:-Asia/Singapore}"
+
+[ -x "$BIN" ] || { echo "не найден браузер: $BIN"; exit 1; }
+
+fresh=0
+if [ "${1:-}" = "--fresh" ]; then fresh=1; shift; fi
+PROFILE="${PROFILE_DIR:-$MAIN_PROFILE}"
+[ "$fresh" = "1" ] && PROFILE="$FRESH_PROFILE"
+
+target="https://claude.ai/"
+case "${1:-}" in
+  --check) target="file://$DIR/sandbox/tz-check.html" ;;
+  "")      ;;
+  *)       target="$1" ;;
+esac
+
+running() {
+  [ -L "$1/SingletonLock" ] || return 1
+  local pid
+  pid="$(readlink "$1/SingletonLock" 2>/dev/null | sed 's/.*-//')"
+  [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null
+}
+
+if running "$PROFILE"; then
+  lockpid="$(readlink "$PROFILE/SingletonLock" | sed 's/.*-//')"
+  args="$(ps -p "$lockpid" -o args= 2>/dev/null)"
+  case "$args" in
+    *"--proxy-server=socks5://127.0.0.1:2080"*)
+      open -a "$APP" "$target" && exit 0 ;;
+  esac
+  echo "$NAME открыт без настроек Сингапура — перезапускаю, вкладки вернутся." >&2
+  killall "$NAME" 2>/dev/null
+  for _ in $(seq 1 40); do running "$PROFILE" || break; sleep 0.25; done
+  if running "$PROFILE"; then
+    echo "не удалось закрыть $NAME — сделайте Cmd+Q и повторите" >&2
+    exit 1
+  fi
+fi
+
+TZ="$TZ_SG" \
+LANG="en_SG.UTF-8" \
+LC_ALL="en_SG.UTF-8" \
+exec "$BIN" \
+  --user-data-dir="$PROFILE" \
+  --proxy-server="socks5://127.0.0.1:2080" \
+  --force-webrtc-ip-handling-policy=disable_non_proxied_udp \
+  --lang=en-US \
+  --accept-lang=en-SG,en \
+  --no-first-run \
+  "$target"

@@ -1,0 +1,66 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Что видит сайт</title>
+<style>
+  body { font: 16px/1.6 -apple-system, sans-serif; margin: 40px; max-width: 640px; }
+  td { padding: 4px 12px 4px 0; }
+  b { font-family: ui-monospace, monospace; }
+  .ok { color: #0a7; } .bad { color: #c33; }
+</style>
+<h2>Что видит сайт</h2>
+<p>Откройте этот файл в том Chrome, который ходит через Сингапур. Ниже — то,
+что <code>claude.ai</code> прочитает о вас при первом же запросе.</p>
+<table id="out"></table>
+
+<script>
+const offHours = -new Date().getTimezoneOffset() / 60;
+const rows = [
+  ["Часовой пояс", Intl.DateTimeFormat().resolvedOptions().timeZone, v => v === "Asia/Singapore", "Asia/Singapore"],
+  ["Смещение", "UTC" + (offHours >= 0 ? "+" : "") + offHours, v => offHours === 8, "UTC+8"],
+  ["Локальное время", new Date().toLocaleString("ru-RU"), null, ""],
+  ["Язык браузера", navigator.language, v => v === "en-SG", "en-SG"],
+  ["Языки", (navigator.languages || []).join(", "), null, ""],
+  ["UTC", new Date().toISOString(), null, ""],
+];
+
+const out = document.getElementById("out");
+let bad = 0;
+
+function row(k, v, ok, want) {
+  const tr = document.createElement("tr");
+  let mark = "";
+  if (ok === true) mark = ' <span class="ok">✓</span>';
+  else if (ok === false) { mark = ' <span class="bad">← ожидалось ' + want + "</span>"; bad++; }
+  tr.innerHTML = "<td>" + k + "</td><td><b>" + v + "</b>" + mark + "</td>";
+  out.appendChild(tr);
+}
+
+for (const [k, v, check, want] of rows) {
+  row(k, v, check ? check(v) : null, want);
+}
+
+// WebRTC: покажет ли браузер адрес в обход прокси
+let pc;
+try { pc = new RTCPeerConnection({ iceServers: [{ urls: "stun:stun.l.google.com:19302" }] }); }
+catch (e) { row("WebRTC", "недоступен на file://", null, ""); }
+
+const found = new Set();
+if (pc) {
+  pc.createDataChannel("x");
+  pc.onicecandidate = e => {
+    if (!e.candidate) return;
+    const m = /([0-9]{1,3}(\.[0-9]{1,3}){3}|[a-f0-9]{1,4}(:[a-f0-9]{0,4}){2,7})/.exec(e.candidate.candidate);
+    if (m && !found.has(m[1])) { found.add(m[1]); row("WebRTC", m[1], false, "не отдавать адрес"); }
+  };
+  pc.createOffer().then(o => pc.setLocalDescription(o));
+  setTimeout(() => { if (!found.size) row("WebRTC", "не отдал адрес", true, ""); }, 3000);
+}
+
+setTimeout(() => {
+  const tr = document.createElement("tr");
+  tr.innerHTML = bad === 0
+    ? "<td colspan=2><b class='ok'>Всё сходится: Сингапур</b></td>"
+    : "<td colspan=2><b class='bad'>Расхождений: " + bad + "</b></td>";
+  out.appendChild(tr);
+}, 3500);
+</script>

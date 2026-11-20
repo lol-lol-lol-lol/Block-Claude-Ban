@@ -1,0 +1,14 @@
+# Секреты и локальное состояние — не коммитить
+config.json
+config.json.bak*
+*.log
+*.err
+.run.pid
+.guard-relaunch
+
+# macOS
+.DS_Store
+
+# Редакторы
+.idea/
+.vscode/

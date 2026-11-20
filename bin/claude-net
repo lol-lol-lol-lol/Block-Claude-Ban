@@ -1,0 +1,100 @@
+#!/bin/bash
+# Управление локальным шлюзом для Claude.
+# Использование: claude-net start|stop|restart|status|check|logs|use <sg-ss|proxyline>
+set -uo pipefail
+
+# путь к набору, с разворотом симлинков (иначе DIR = ~ при запуске через ~/bin)
+src="${BASH_SOURCE[0]}"
+while [ -L "$src" ]; do
+  d="$(cd -P "$(dirname "$src")" && pwd)"
+  src="$(readlink "$src")"
+  case "$src" in /*) ;; *) src="$d/$src" ;; esac
+done
+DIR="$(cd -P "$(dirname "$src")/.." && pwd)"
+BIN="$DIR/bin/sing-box"
+CFG="$DIR/config.json"
+PIDF="$DIR/.run.pid"
+LOG="$DIR/sing-box.log"
+API="http://127.0.0.1:9090"
+
+port_open() { nc -z -G 1 127.0.0.1 2080 >/dev/null 2>&1; }
+
+secret() {
+  python3 -c "import json;print(json.load(open('$CFG'))['experimental']['clash_api']['secret'])"
+}
+
+start() {
+  if port_open; then echo "уже запущен на 127.0.0.1:2080"; return 0; fi
+  [ -x "$BIN" ] || { echo "нет бинарника $BIN"; return 1; }
+  "$BIN" check -c "$CFG" >/dev/null || { echo "конфиг битый, проверьте: $BIN check -c $CFG"; return 1; }
+  nohup "$BIN" run -c "$CFG" >>"$LOG" 2>&1 &
+  echo $! >"$PIDF"
+  for i in $(seq 1 20); do
+    port_open && { echo "запущен, pid $(cat "$PIDF"), порт 2080"; return 0; }
+    sleep 0.25
+  done
+  echo "не поднялся, смотрите $LOG"; tail -5 "$LOG"; return 1
+}
+
+stop() {
+  if [ -f "$PIDF" ]; then kill "$(cat "$PIDF")" 2>/dev/null; rm -f "$PIDF"; fi
+  pkill -f "sing-box run -c $CFG" 2>/dev/null
+  sleep 0.5
+  port_open && echo "всё ещё слушает 2080" || echo "остановлен"
+}
+
+status() {
+  if port_open; then echo "шлюз: работает (127.0.0.1:2080)"; else echo "шлюз: НЕ работает"; fi
+  if pgrep -f "sing-box run" >/dev/null; then echo "процесс: жив"; else echo "процесс: нет"; fi
+  local now
+  now=$(curl -sS -m 3 -H "Authorization: Bearer $(secret)" "$API/proxies/claude-chain" \
+        | python3 -c "import sys,json;print(json.load(sys.stdin).get('now','?'))" 2>/dev/null)
+  echo "цепочка Claude: ${now:-неизвестно}"
+}
+
+use() {
+  local tag="${1:-}"
+  case "$tag" in
+    sg-vps|sg-vps-ss|sg-ss|backup|proxyline) ;;
+    *) echo "use <тег из claude-chain>"; return 1 ;;
+  esac
+  local out
+  out=$(curl -sS -m 5 -X PUT -H "Authorization: Bearer $(secret)" -H 'Content-Type: application/json' \
+        -d "{\"name\":\"$tag\"}" "$API/proxies/claude-chain" 2>&1)
+  [ -z "$out" ] || echo "$out"
+  echo "цепочка Claude → $tag"
+}
+
+UA='Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36'
+check() {
+  printf '%-32s %s\n' "— прямой выход (без шлюза):" "$(curl -sS -m 15 https://api.ipify.org 2>/dev/null || echo FAIL)"
+  printf '%-32s %s\n' "— выход цепочки Claude:" "$(curl -sS -m 25 --proxy socks5h://127.0.0.1:2081 https://api.ipify.org 2>/dev/null || echo FAIL)"
+  printf '%-32s %s\n' "— обычный сайт через шлюз:" "$(curl -sS -m 25 --proxy socks5h://127.0.0.1:2080 https://api.ipify.org 2>/dev/null || echo FAIL)"
+  printf '%-32s %s\n' "— claude.ai (HTTP-код):" "$(curl -sS -m 25 --proxy socks5h://127.0.0.1:2080 -A "$UA" -o /dev/null -w '%{http_code}' https://claude.ai/ 2>/dev/null || echo FAIL)"
+  printf '%-32s %s\n' "— api.anthropic.com (код):" "$(curl -sS -m 25 --proxy socks5h://127.0.0.1:2080 -o /dev/null -w '%{http_code}' https://api.anthropic.com/v1/models 2>/dev/null || echo FAIL)"
+}
+
+web() {
+  "$DIR/bin/chrome-claude" "https://ip.net.coffee/claude/" >/dev/null 2>&1 && echo "открыл проверку в Chrome"
+}
+
+trace() {
+  local p="--proxy socks5h://127.0.0.1:2081"
+  echo "цепочка Claude:"
+  curl -sS -m 20 $p https://www.cloudflare.com/cdn-cgi/trace 2>/dev/null | grep -E '^(ip|loc|colo)=' | sed 's/^/  /'
+  echo "напрямую (для контроля):"
+  curl -sS -m 20 https://www.cloudflare.com/cdn-cgi/trace 2>/dev/null | grep -E '^(ip|loc|colo)=' | sed 's/^/  /'
+}
+
+case "${1:-status}" in
+  start)   start ;;
+  stop)    stop ;;
+  restart) stop; start ;;
+  status)  status ;;
+  check)   check ;;
+  logs)    tail -n 40 "$LOG" ;;
+  trace)   trace ;;
+  web)     web ;;
+  use)     shift; use "$@" ;;
+  *) echo "start|stop|restart|status|check|trace|web|logs|use <sg-ss|proxyline>" ;;
+esac

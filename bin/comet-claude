@@ -1,0 +1,21 @@
+#!/bin/bash
+# Comet с настройками Сингапура. Тот же интерфейс, что у chrome-claude:
+#   comet-claude [--check|--fresh|<url>]
+# По умолчанию — ваш основной профиль Comet со всеми вкладками и закладками.
+set -uo pipefail
+
+src="${BASH_SOURCE[0]}"
+while [ -L "$src" ]; do
+  d="$(cd -P "$(dirname "$src")" && pwd)"
+  src="$(readlink "$src")"
+  case "$src" in /*) ;; *) src="$d/$src" ;; esac
+done
+DIR="$(cd -P "$(dirname "$src")/.." && pwd)"
+
+export BROWSER_APP="${BROWSER_APP:-/Applications/Comet.app}"
+export BROWSER_NAME="${BROWSER_NAME:-Comet}"
+export BROWSER_BIN="${BROWSER_BIN:-$BROWSER_APP/Contents/MacOS/Comet}"
+export MAIN_PROFILE="${MAIN_PROFILE:-$HOME/Library/Application Support/Comet}"
+export FRESH_PROFILE="${FRESH_PROFILE:-$HOME/Library/Application Support/comet-claude}"
+
+exec "$DIR/bin/chrome-claude" "$@"

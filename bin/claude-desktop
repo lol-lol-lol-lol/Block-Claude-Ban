@@ -1,0 +1,91 @@
+#!/bin/bash
+# Запуск Claude Desktop через наш шлюз (Сингапур).
+# Electron берёт прокси из --proxy-server, системный занят Happ.
+#
+#   claude-desktop            # проверка + запуск
+#   claude-desktop --restart  # закрыть и запустить заново
+#   claude-desktop --check    # только проверка, без запуска
+set -uo pipefail
+
+src="${BASH_SOURCE[0]}"
+while [ -L "$src" ]; do
+  d="$(cd -P "$(dirname "$src")" && pwd)"
+  src="$(readlink "$src")"
+  case "$src" in /*) ;; *) src="$d/$src" ;; esac
+done
+DIR="$(cd -P "$(dirname "$src")/.." && pwd)"
+
+APP="/Applications/Claude.app"
+BIN="$APP/Contents/MacOS/Claude"
+PROXY="socks5://127.0.0.1:2080"
+PROBE="socks5h://127.0.0.1:2081"
+
+[ -x "$BIN" ] || { echo "не найден $BIN" >&2; exit 1; }
+
+die() {
+  echo "ОТКАЗ: $*" >&2
+  # если запущено не из терминала (ярлык) — показать диалог
+  if [ ! -t 1 ]; then
+    osascript -e "display dialog \"$*\" with title \"Claude SG\" buttons {\"OK\"} default button 1 with icon caution" >/dev/null 2>&1
+  fi
+  exit 69
+}
+
+# шлюз: ждём до 60 секунд (после загрузки системы он поднимается не мгновенно)
+for i in $(seq 1 60); do
+  nc -z -G 1 127.0.0.1 2080 >/dev/null 2>&1 && break
+  [ "$i" = "1" ] && "$DIR/bin/claude-net" start >/dev/null 2>&1
+  sleep 1
+done
+
+state=$("$DIR/bin/claude-net" status)
+case "$state" in
+  *"работает"*) ;;
+  *) die "шлюз не запущен: claude-net start" ;;
+esac
+
+# цепочка должна смотреть в Сингапур
+now=$(printf '%s' "$state" | awk -F': ' '/цепочка/{print $2}')
+case "$now" in
+  sg-vps|sg-vps-ss|sg-ss|backup) ;;
+  *)
+    # API не ответил (шлюз только что стартовал) — берём цепочку из конфига
+    def=$(python3 -c "import json;d=json.load(open('$DIR/config.json'));print([o for o in d['outbounds'] if o['tag']=='claude-chain'][0].get('default',''))" 2>/dev/null)
+    case "$def" in
+      sg-vps|sg-vps-ss|sg-ss|backup) now="$def" ;;
+      *) die "цепочка '$now' — не Сингапур (claude-net use sg-vps-ss)" ;;
+    esac ;;
+esac
+
+# реальный выход
+ip=$(curl -sS -m 20 --proxy "$PROBE" https://api.ipify.org 2>/dev/null)
+[ -n "$ip" ] || die "не удалось проверить выход цепочки"
+
+# что реально запущено
+running_with_proxy() {
+  local pid; pid=$(pgrep -x Claude | head -1)
+  [ -n "$pid" ] || return 1
+  ps -p "$pid" -o args= 2>/dev/null | grep -q -- "--proxy-server=socks5://127.0.0.1:2080"
+}
+
+case "${1:-}" in
+  --check)
+    echo "выход цепочки: $ip (Сингапур)"
+    exit 0 ;;
+  --restart)
+    pkill -x Claude 2>/dev/null; sleep 2 ;;
+esac
+
+if pgrep -x Claude >/dev/null; then
+  if running_with_proxy; then
+    echo "Claude уже запущен через шлюз, выход $ip — открываю окно"
+    open -a "$APP" && exit 0
+  fi
+  echo "Claude запущен БЕЗ нашего прокси — закрываю и запускаю заново" >&2
+  pkill -x Claude 2>/dev/null
+  sleep 2
+fi
+
+echo "запуск Claude через $PROXY, выход $ip"
+TZ="${CLAUDE_TZ:-Asia/Singapore}" LANG="en_SG.UTF-8" \
+exec "$BIN" --proxy-server="$PROXY"

@@ -1,0 +1,79 @@
+#!/bin/bash
+# Запуск Claude Code через шлюз с предварительной проверкой выхода
+# и сетевой песочницей: процесс (и всё, что он запустит) может ходить
+# только на localhost:2080, любой прямой выход запрещён ядром.
+#
+#   ./bin/claude-safe              # проверка + запуск claude
+#   ./bin/claude-safe --check      # только проверка
+#   ./bin/claude-safe --no-sandbox # запуск без песочницы (только для отладки)
+#   ./bin/claude-safe -- --version # аргументы после -- уходят в claude
+set -uo pipefail
+
+# путь к набору, с разворотом симлинков (иначе DIR = ~ при запуске через ~/bin)
+src="${BASH_SOURCE[0]}"
+while [ -L "$src" ]; do
+  d="$(cd -P "$(dirname "$src")" && pwd)"
+  src="$(readlink "$src")"
+  case "$src" in /*) ;; *) src="$d/$src" ;; esac
+done
+DIR="$(cd -P "$(dirname "$src")/.." && pwd)"
+PROBE="socks5h://127.0.0.1:2081"
+EXPECTED_FILE="$DIR/sandbox/expected-ip.txt"
+PROFILE="$DIR/sandbox/claude-code.sb"
+EXPECTED_COUNTRY="${EXPECTED_COUNTRY:-SG}"
+export TZ="${CLAUDE_TZ:-Asia/Singapore}"   # видно только этому процессу
+
+check_only=0
+no_sandbox=0
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --check) check_only=1; shift ;;
+    --no-sandbox) no_sandbox=1; shift ;;
+    --) shift; break ;;
+    *) break ;;
+  esac
+done
+
+die() { echo "ОТКАЗ: $*" >&2; exit 69; }
+
+state=$("$DIR/bin/claude-net" status)
+
+case "$state" in
+  *"работает"*) ;;
+  *) die "шлюз не запущен (./bin/claude-net start)" ;;
+esac
+
+now=$(printf '%s' "$state" | awk -F': ' '/цепочка/{print $2}')
+[ "$now" = "sg-ss" ] || die "цепочка указывает на '$now', а нужен Сингапур (./bin/claude-net use sg-ss)"
+
+view=$(curl -sS -m 20 --proxy "$PROBE" https://ipwho.is/ 2>/dev/null) \
+  || die "не удалось узнать выходной адрес цепочки"
+
+ip=$(printf '%s' "$view" | python3 -c "import sys,json;print(json.load(sys.stdin).get('ip',''))" 2>/dev/null)
+country=$(printf '%s' "$view" | python3 -c "import sys,json;print(json.load(sys.stdin).get('country_code',''))" 2>/dev/null)
+
+[ -n "$ip" ] || die "пустой ответ от проверки адреса"
+[ "$country" = "$EXPECTED_COUNTRY" ] || die "выход $ip — страна $country, а нужна $EXPECTED_COUNTRY"
+
+if [ -s "$EXPECTED_FILE" ]; then
+  expected=$(tr -d '[:space:]' <"$EXPECTED_FILE")
+  [ "$ip" = "$expected" ] || die "выход $ip не совпадает с ожидаемым $expected"
+fi
+
+echo "проверка пройдена: $ip ($country), TZ=${TZ}"
+[ "$check_only" = "1" ] && exit 0
+
+export HTTPS_PROXY="http://127.0.0.1:2080"
+export HTTP_PROXY="$HTTPS_PROXY"
+export ALL_PROXY="socks5h://127.0.0.1:2080"
+export NO_PROXY="localhost,127.0.0.1"
+
+BIN="${CLAUDE_BIN:-$(command -v claude || true)}"
+[ -x "$BIN" ] || die "не найден бинарник claude (задайте CLAUDE_BIN)"
+
+
+if [ "$no_sandbox" = "1" ]; then
+  exec "$BIN" "$@"
+fi
+
+exec /usr/bin/sandbox-exec -f "$PROFILE" "$BIN" "$@"

@@ -1,0 +1,103 @@
+{
+  "log": {
+    "level": "info",
+    "timestamp": true,
+    "output": "sing-box.log"
+  },
+
+  "dns": {
+    "servers": [
+      { "tag": "lan", "type": "udp", "server": "192.168.1.1" },
+      { "tag": "doh-claude", "type": "https", "server": "1.1.1.1",
+        "detour": "claude-chain", "domain_resolver": "lan" }
+    ],
+    "rules": [
+      {
+        "domain_suffix": [
+          "anthropic.com",
+          "claude.ai",
+          "claude.com",
+          "claudeusercontent.com",
+          "statsig.com",
+          "statsigapi.net",
+          "sentry.io",
+          "browser-intake-us5-datadoghq.com",
+          "challenges.cloudflare.com"
+        ],
+        "server": "doh-claude"
+      }
+    ],
+    "final": "lan",
+    "strategy": "ipv4_only"
+  },
+
+  "inbounds": [
+    { "type": "mixed", "tag": "local-proxy", "listen": "127.0.0.1", "listen_port": 2080 },
+    { "type": "mixed", "tag": "probe", "listen": "127.0.0.1", "listen_port": 2081 }
+  ],
+
+  "outbounds": [
+    {
+      "type": "shadowsocks",
+      "tag": "sg-vps",
+      "server": "YOUR_SERVER_IP",
+      "server_port": 8443,
+      "method": "2022-blake3-aes-128-gcm",
+      "password": "YOUR_SS_PASSWORD"
+    },
+
+    {
+      "type": "socks",
+      "tag": "backup",
+      "server": "YOUR_BACKUP_PROXY_HOST",
+      "server_port": 1080,
+      "version": "5",
+      "username": "YOUR_USER",
+      "password": "YOUR_PASS"
+    },
+
+    {
+      "type": "selector",
+      "tag": "claude-chain",
+      "outbounds": ["sg-vps", "backup"],
+      "default": "sg-vps"
+    },
+
+    { "type": "direct", "tag": "direct" },
+    { "type": "block", "tag": "block" }
+  ],
+
+  "route": {
+    "rules": [
+      { "inbound": ["probe"], "outbound": "claude-chain" },
+      { "action": "sniff" },
+      {
+        "domain_suffix": [
+          "anthropic.com",
+          "claude.ai",
+          "claude.com",
+          "claudeusercontent.com",
+          "statsig.com",
+          "statsigapi.net",
+          "sentry.io",
+          "browser-intake-us5-datadoghq.com",
+          "challenges.cloudflare.com"
+        ],
+        "outbound": "claude-chain"
+      },
+      {
+        "ip_cidr": ["160.79.104.0/21", "2607:6bc0::/32"],
+        "outbound": "claude-chain"
+      }
+    ],
+    "final": "direct",
+    "default_domain_resolver": "lan"
+  },
+
+  "experimental": {
+    "clash_api": {
+      "external_controller": "127.0.0.1:9090",
+      "secret": "CHANGE_ME_TO_RANDOM"
+    }
+  }
+}
