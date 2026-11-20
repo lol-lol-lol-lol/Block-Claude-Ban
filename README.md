@@ -32,14 +32,7 @@ discipline:
 
 ## How it works
 
-```mermaid
-flowchart LR
-    A[Claude.app<br/>Chrome<br/>Claude Code] -->|127.0.0.1:2080| B[sing-box<br/>gateway]
-    B -->|Claude domains +<br/>160.79.104.0/21| C[Your server<br/>Singapore]
-    B -->|everything else| D[Regular VPN<br/>or direct]
-    C --> E[Anthropic]
-    F[Little Snitch] -.->|deny direct<br/>connections| E
-```
+![Architecture: gateway routes Claude domains through your server](docs/assets/architecture.svg)
 
 The gateway is the only component that decides where traffic goes. Direct access to
 Anthropic is blocked by the firewall, so even an app that ignores the proxy cannot
